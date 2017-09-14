@@ -21,8 +21,10 @@ package org.jboss.ejb.client;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 
 import javax.naming.Binding;
+import javax.naming.Context;
 import javax.naming.Name;
 import javax.naming.NameClassPair;
 import javax.naming.NamingException;
@@ -33,6 +35,7 @@ import org.wildfly.naming.client.AbstractContext;
 import org.wildfly.naming.client.CloseableNamingEnumeration;
 import org.wildfly.naming.client.NamingProvider;
 import org.wildfly.naming.client.SimpleName;
+import org.wildfly.naming.client.remote.LegacyConstantsSupport;
 import org.wildfly.naming.client.store.RelativeContext;
 import org.wildfly.naming.client.util.FastHashtable;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
@@ -134,7 +137,8 @@ class EJBRootContext extends AbstractContext {
             throw Logs.MAIN.lookupFailed(name, name, e);
         }
         final NamingProvider namingProvider = this.namingProvider;
-        final AuthenticationConfiguration authenticationConfiguration = namingProvider == null ? null : namingProvider.getAuthenticationConfiguration();
+        AuthenticationConfiguration authenticationConfiguration = namingProvider == null ? null : namingProvider.getAuthenticationConfiguration();
+        UnaryOperator<AuthenticationConfiguration> authenticationConfigurationPostProcessor = LegacyConstantsSupport.getAuthenticationConfigurationPostProcessor(getEnvironment());
         final SSLContext sslContext = namingProvider == null ? null : namingProvider.getSSLContext();
         final EJBModuleIdentifier moduleIdentifier = new EJBModuleIdentifier(appName, moduleName, distinctName);
         final EJBIdentifier identifier = new EJBIdentifier(moduleIdentifier, beanName);
@@ -142,12 +146,12 @@ class EJBRootContext extends AbstractContext {
         final Object proxy;
         if (stateful) {
             try {
-                proxy = EJBClient.createSessionProxy(statelessLocator, authenticationConfiguration, sslContext, namingProvider);
+                proxy = EJBClient.createSessionProxy(statelessLocator, authenticationConfiguration, sslContext, namingProvider, authenticationConfigurationPostProcessor);
             } catch (Exception e) {
                 throw Logs.MAIN.lookupFailed(name, name, e);
             }
         } else {
-            proxy = EJBClient.createProxy(statelessLocator, authenticationConfiguration, sslContext);
+            proxy = EJBClient.createProxy(statelessLocator, authenticationConfiguration, sslContext, authenticationConfigurationPostProcessor);
         }
         if (namingProvider != null) EJBClient.putProxyAttachment(proxy, NAMING_PROVIDER_ATTACHMENT_KEY, namingProvider);
 

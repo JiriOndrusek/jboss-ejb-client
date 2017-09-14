@@ -150,12 +150,14 @@ public final class EJBClient {
      * @throws IllegalArgumentException if the locator parameter is {@code null} or is invalid
      */
     public static <T> T createProxy(final EJBLocator<T> locator) throws IllegalArgumentException {
-        return createProxy(locator, null, null);
+        return createProxy(locator, null, null, null);
     }
 
-    static <T> T createProxy(final EJBLocator<T> locator, final AuthenticationConfiguration authenticationConfiguration, final SSLContext sslContext) {
+    static <T> T createProxy(final EJBLocator<T> locator, final AuthenticationConfiguration authenticationConfiguration, final SSLContext sslContext, final UnaryOperator<AuthenticationConfiguration> authenticationConfigurationPostProcessor) {
         Assert.checkNotNullParam("locator", locator);
-        return locator.createProxyInstance(new EJBInvocationHandler<T>(locator, authenticationConfiguration, sslContext));
+        EJBInvocationHandler<T> invocationHandler = new EJBInvocationHandler<>(locator, authenticationConfiguration, sslContext);
+        invocationHandler.setAuthenticationConfigurationPostProcessor(authenticationConfigurationPostProcessor);
+        return locator.createProxyInstance(invocationHandler);
     }
 
     /**
@@ -177,7 +179,7 @@ public final class EJBClient {
      * @throws CreateException if an error occurs
      */
     public static <T> T createSessionProxy(final StatelessEJBLocator<T> statelessLocator) throws Exception {
-        return createSessionProxy(statelessLocator, null, null);
+        return createSessionProxy(statelessLocator, null, null, null);
     }
 
     /**
@@ -190,29 +192,29 @@ public final class EJBClient {
      * @return the new EJB locator
      * @throws CreateException if an error occurs
      */
-    static <T> T createSessionProxy(final StatelessEJBLocator<T> statelessLocator, AuthenticationConfiguration authenticationConfiguration, SSLContext sslContext) throws Exception {
+    static <T> T createSessionProxy(final StatelessEJBLocator<T> statelessLocator, AuthenticationConfiguration authenticationConfiguration, SSLContext sslContext, final UnaryOperator<AuthenticationConfiguration> authenticationConfigurationPostProcessor) throws Exception {
         final StatefulEJBLocator<T> statefulLocator = createSession(statelessLocator, authenticationConfiguration, sslContext);
         if (statelessLocator.getAffinity() instanceof ClusterAffinity) {
             final Affinity weakAffinity = statefulLocator.getAffinity();
-            final T proxy = createProxy(statefulLocator.withNewAffinity(statelessLocator.getAffinity()), authenticationConfiguration, sslContext);
+            final T proxy = createProxy(statefulLocator.withNewAffinity(statelessLocator.getAffinity()), authenticationConfiguration, sslContext, authenticationConfigurationPostProcessor);
             setWeakAffinity(proxy, weakAffinity);
             return proxy;
         } else {
-            return createProxy(statefulLocator, authenticationConfiguration, sslContext);
+            return createProxy(statefulLocator, authenticationConfiguration, sslContext, authenticationConfigurationPostProcessor);
         }
     }
 
     // Special hook method for naming; let's replace this sometime soon.
-    static <T> T createSessionProxy(final StatelessEJBLocator<T> statelessLocator, AuthenticationConfiguration authenticationConfiguration, SSLContext sslContext, NamingProvider namingProvider) throws Exception {
+    static <T> T createSessionProxy(final StatelessEJBLocator<T> statelessLocator, AuthenticationConfiguration authenticationConfiguration, SSLContext sslContext, NamingProvider namingProvider, final UnaryOperator<AuthenticationConfiguration> operator) throws Exception {
         final EJBClientContext clientContext = EJBClientContext.getCurrent();
         final StatefulEJBLocator<T> statefulLocator = clientContext.createSession(statelessLocator, authenticationConfiguration, sslContext, namingProvider);
         if (statelessLocator.getAffinity() instanceof ClusterAffinity) {
             final Affinity weakAffinity = statefulLocator.getAffinity();
-            final T proxy = createProxy(statefulLocator.withNewAffinity(statelessLocator.getAffinity()), authenticationConfiguration, sslContext);
+            final T proxy = createProxy(statefulLocator.withNewAffinity(statelessLocator.getAffinity()), authenticationConfiguration, sslContext, operator);
             setWeakAffinity(proxy, weakAffinity);
             return proxy;
         } else {
-            return createProxy(statefulLocator, authenticationConfiguration, sslContext);
+            return createProxy(statefulLocator, authenticationConfiguration, sslContext, operator);
         }
     }
 

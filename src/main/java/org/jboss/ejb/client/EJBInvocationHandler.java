@@ -23,17 +23,21 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.rmi.RemoteException;
+import java.security.AccessController;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
 
 import javax.ejb.EJBException;
 import javax.ejb.EJBHome;
 import javax.ejb.EJBObject;
 import javax.net.ssl.SSLContext;
 
+import com.sun.jndi.toolkit.url.Uri;
 import org.jboss.ejb._private.Logs;
 import org.wildfly.common.Assert;
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
+import org.wildfly.security.auth.client.AuthenticationContext;
 
 /**
  * @param <T> the proxy view type
@@ -63,6 +67,8 @@ final class EJBInvocationHandler<T> extends Attachable implements InvocationHand
      * The sticky SSL context for this proxy.
      */
     private volatile SSLContext sslContext;
+
+    private volatile UnaryOperator<AuthenticationConfiguration> authenticationConfigurationPostProcessor;
 
     /**
      * Construct a new instance.
@@ -162,6 +168,14 @@ final class EJBInvocationHandler<T> extends Attachable implements InvocationHand
         invocationContext.setLocator(locatorRef.get());
         invocationContext.setBlockingCaller(true);
         invocationContext.setWeakAffinity(getWeakAffinity());
+        if(authenticationConfiguration == null){
+            java.net.URI destination = clientContext.getConfiguredConnections().get(0).getDestination();
+            authenticationConfiguration = AccessController.doPrivileged(org.wildfly.security.auth.client.AuthenticationContextConfigurationClient.ACTION).getAuthenticationConfiguration(destination, org.wildfly.security.auth.client.AuthenticationContext.captureCurrent()).useName("admin");
+            if(authenticationConfigurationPostProcessor != null) {
+                authenticationConfiguration = authenticationConfigurationPostProcessor.apply(authenticationConfiguration);
+            }
+        }
+
         invocationContext.setAuthenticationConfiguration(authenticationConfiguration);
         invocationContext.setSSLContext(sslContext);
 
@@ -319,6 +333,10 @@ final class EJBInvocationHandler<T> extends Attachable implements InvocationHand
 
     void setInvocationTimeout(final long invocationTimeout) {
         this.invocationTimeout = invocationTimeout;
+    }
+
+    public void setAuthenticationConfigurationPostProcessor(UnaryOperator<AuthenticationConfiguration> authenticationConfigurationPostProcessor) {
+        this.authenticationConfigurationPostProcessor = authenticationConfigurationPostProcessor;
     }
 
     boolean compareAndSetStrongAffinity(final Affinity expectedAffinity, final Affinity newAffinity) {
