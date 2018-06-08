@@ -70,7 +70,19 @@ public final class RemotingConnectionEJBReceiver extends EJBReceiver {
     private static final Logger logger = Logger.getLogger(RemotingConnectionEJBReceiver.class);
 
     private static final String EJB_CHANNEL_NAME = "jboss.ejb";
+
+
+    /**
+     * Timeout defined through system property "org.jboss.ejb.initial-module-wait-time", value in property is in seconds.
+     */
     public static final int INITIAL_MODULE_WAIT_TIME;
+
+
+    /**
+     * Timeout defined through system property "org.jboss.ejb.version-handshake-wait-time", value in property is in seconds and is converted to milliseconds.
+     */
+    public static final long VERSION_HANDSHAKE_WAIT_TIMEOUT_IN_MILLIS;
+    public static final boolean VERSION_HANDSHAKE_WAIT_TIMEOUT_DEFINED;
 
     static {
         String s = SecurityActions.getSystemProperty("org.jboss.ejb.initial-module-wait-time");
@@ -82,6 +94,21 @@ public final class RemotingConnectionEJBReceiver extends EJBReceiver {
             //default value will be used
         }
         INITIAL_MODULE_WAIT_TIME = i;
+
+        //for version hadnshake timeout
+        s = SecurityActions.getSystemProperty("org.jboss.ejb.version-handshake-wait-time");
+        //default value
+        i = 30;
+        boolean defined = true;
+        try {
+            i = Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            //default value will be used
+            defined = false;
+        }
+        //convert value into milliseconds
+        VERSION_HANDSHAKE_WAIT_TIMEOUT_IN_MILLIS = i*1000;
+        VERSION_HANDSHAKE_WAIT_TIMEOUT_DEFINED = defined;
     }
 
     private final Connection connection;
@@ -172,11 +199,16 @@ public final class RemotingConnectionEJBReceiver extends EJBReceiver {
             // followed for a wait for the response
             final EJBClientConfiguration ejbClientConfiguration = context.getClientContext().getEJBClientConfiguration();
             final long versionHandshakeTimeoutInMillis;
-            if (ejbClientConfiguration == null || ejbClientConfiguration.getInvocationTimeout() <= 0) {
-                // default to 5000 milli sec
-                versionHandshakeTimeoutInMillis = 5000;
+            if (VERSION_HANDSHAKE_WAIT_TIMEOUT_DEFINED) {
+                versionHandshakeTimeoutInMillis = VERSION_HANDSHAKE_WAIT_TIMEOUT_IN_MILLIS;
             } else {
-                versionHandshakeTimeoutInMillis = ejbClientConfiguration.getInvocationTimeout();
+                //if invocation timeout is not defined or is to wait indefinately, use default values 30 seconds
+                if (ejbClientConfiguration == null || ejbClientConfiguration.getInvocationTimeout() <= 0) {
+                    versionHandshakeTimeoutInMillis = 30000;
+                } else {
+                    // in other cases, use invocation timeout
+                    versionHandshakeTimeoutInMillis = ejbClientConfiguration.getInvocationTimeout();
+                }
             }
             successfulHandshake = versionHandshakeLatch.await(versionHandshakeTimeoutInMillis, TimeUnit.MILLISECONDS);
             if (successfulHandshake) {
